@@ -102,6 +102,7 @@ on:
 jobs:
   build-kernels-a12-5-10:
     name: "5.10.${{ matrix.sub_level }}-${{ matrix.os_patch_level }}"
+    if: ${{ inputs.sub_levels == '' || contains(format(',{0},', inputs.sub_levels), format(',{0},', matrix.sub_level)) }}
     strategy:
       fail-fast: false
       matrix:
