@@ -69,6 +69,11 @@ on:
         required: false
         type: boolean
         default: false
+      sub_levels:
+        description: "Comma-separated sub_levels to build (empty=all)"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build-kernel:
@@ -84,9 +89,26 @@ jobs:
       CCACHE_HARDLINK: "true"
 
     steps:
+      - name: Check sub_level filter
+        id: check_sub
+        run: |
+          SUB_LEVELS="${{ inputs.sub_levels }}"
+          CURRENT="${{ inputs.sub_level }}"
+          if [ -z "$SUB_LEVELS" ]; then
+            echo "Building sub_level $CURRENT (no filter applied)"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          elif echo ",$SUB_LEVELS," | grep -q ",$CURRENT,"; then
+            echo "Building sub_level $CURRENT (matched filter)"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          else
+            echo "Skipping sub_level $CURRENT (not in: $SUB_LEVELS)"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          fi
+
       # ==================== 构建信息摘要 ====================
       # 打印当前构建的所有配置信息，方便调试和追踪
       - name: 构建信息摘要
+        if: steps.check_sub.outputs.skip != 'true'
         run: |
           echo "========================================"
           echo "       内核构建配置摘要"
@@ -108,6 +130,7 @@ jobs:
       # ==================== 清理磁盘空间 ====================
       # GitHub Actions 默认磁盘空间有限，需要清理不必要的预装软件
       - name: 清理磁盘空间
+        if: steps.check_sub.outputs.skip != 'true'
         uses: endersonmenezes/free-disk-space@v3
         with:
           remove_android: true
@@ -124,11 +147,13 @@ jobs:
 
       # ==================== 检出仓库代码 ====================
       - name: 检出代码仓库
+        if: steps.check_sub.outputs.skip != 'true'
         uses: actions/checkout@v4
 
       # ==================== 初始化构建环境 ====================
       # 设置各种路径变量，包括内核源码、补丁、工具等目录
       - name: 初始化构建环境
+        if: steps.check_sub.outputs.skip != 'true'
         run: |
           # 构建配置标识
           CONFIG="${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.sub_level }}"
@@ -161,6 +186,7 @@ jobs:
 
       # ==================== 显示配置文件内容 ====================
       - name: 显示配置信息
+        if: steps.check_sub.outputs.skip != 'true'
         run: |
           CONFIG_FILE="$GITHUB_WORKSPACE/config/config"
           if [ -f "$CONFIG_FILE" ]; then
@@ -171,6 +197,7 @@ jobs:
       # ==================== 安装编译依赖 ====================
       # 安装内核编译所需的各种工具和库（使用 apt 缓存加速）
       - name: 安装编译依赖
+        if: steps.check_sub.outputs.skip != 'true'
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
           packages: ccache python3 git curl build-essential libssl-dev bison flex libelf-dev dwarves
@@ -179,6 +206,7 @@ jobs:
       # ==================== 配置 ccache ====================
       # ccache 用于缓存编译结果，加速后续构建
       - name: 配置 ccache
+        if: steps.check_sub.outputs.skip != 'true'
         run: |
           mkdir -p ~/.cache/bazel
           ccache --version
@@ -188,6 +216,7 @@ jobs:
 
       # ==================== 恢复 ccache 缓存 ====================
       - name: 恢复 ccache 缓存
+        if: steps.check_sub.outputs.skip != 'true'
         uses: actions/cache@v4
         with:
           path: ~/.ccache
@@ -198,6 +227,7 @@ jobs:
       # ==================== 缓存工具链 ====================
       # 缓存 AOSP 构建工具，避免每次重新下载
       - name: 缓存工具链
+        if: steps.check_sub.outputs.skip != 'true'
         id: cache-toolchain
         uses: actions/cache@v4
         with:
@@ -209,7 +239,7 @@ jobs:
       # ==================== 下载工具链 ====================
       # 从 AOSP 镜像下载内核构建工具和 mkbootimg
       - name: 下载工具链
-        if: steps.cache-toolchain.outputs.cache-hit != 'true'
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (steps.cache-toolchain.outputs.cache-hit != 'true') }}
         run: |
           AOSP_MIRROR=https://android.googlesource.com
           BRANCH=main-kernel-build-2024
@@ -219,11 +249,13 @@ jobs:
       # ==================== 生成签名密钥 ====================
       # 生成用于 boot.img 签名的 RSA 密钥
       - name: 生成签名密钥
+        if: steps.check_sub.outputs.skip != 'true'
         run: |
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 > $BOOT_SIGN_KEY_PATH
 
       # ==================== 配置 Git ====================
       - name: 配置 Git
+        if: steps.check_sub.outputs.skip != 'true'
         run: |
           git config --global user.name "BuildBot"
           git config --global user.email "BuildGkiKernel@gmail.com"
@@ -231,6 +263,7 @@ jobs:
       # ==================== 克隆依赖仓库 ====================
       # 克隆 AnyKernel3、SUSFS、各种补丁仓库
       - name: 克隆依赖仓库
+        if: steps.check_sub.outputs.skip != 'true'
         run: |
           ANYKERNEL_BRANCH="gki-2.0"
           SUSFS_BRANCH="gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}"
@@ -279,6 +312,7 @@ jobs:
       # ==================== 初始化并同步内核源码 ====================
       # 使用 repo 工具从 AOSP 获取 GKI 内核源码
       - name: 初始化并同步内核源码
+        if: steps.check_sub.outputs.skip != 'true'
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           # 克隆 GCC 工具链 (用于 5.x 内核)
@@ -304,6 +338,7 @@ jobs:
       # ==================== 伪装 /proc/config.gz（自动检测） ====================
       # 若仓库存在 config/stock_defconfig，则自动应用；不存在则跳过
       - name: 应用 Stock Config 伪装
+        if: steps.check_sub.outputs.skip != 'true'
         run: |
           # 仓库内的 stock_defconfig 来源与内核源码目标路径
           STOCK_SRC="$GITHUB_WORKSPACE/config/stock_defconfig"
@@ -348,6 +383,7 @@ jobs:
       # ==================== 提取实际子版本号 ====================
       # 从 Makefile 中读取真实的 SUBLEVEL 值
       - name: 提取实际子版本号
+        if: steps.check_sub.outputs.skip != 'true'
         run: |
           ACTUAL_SUBLEVEL="${{ inputs.sub_level }}"
           if [[ -f "$KERNEL_ROOT/common/Makefile" ]]; then
@@ -360,6 +396,7 @@ jobs:
       # ==================== 修复 glibc 2.38 兼容性问题 ====================
       # 某些旧版内核在新版 glibc 上编译会出错，需要打补丁
       - name: 修复 glibc 2.38 兼容性
+        if: steps.check_sub.outputs.skip != 'true'
         working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
           RAW_SUB="${{ inputs.sub_level }}"
@@ -390,7 +427,7 @@ jobs:
       # ==================== 一加 8E 处理器支持 ====================
       # 添加一加 8E 处理器机型的支持补丁
       - name: 添加一加 8E 处理器支持
-        if: inputs.supp_op
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.supp_op) }}
         working-directory: ${{ env.KERNEL_ROOT }}/common/drivers
         run: |
           echo "下载一加 8E 支持补丁..."
@@ -400,6 +437,7 @@ jobs:
       # ==================== 确定 KernelSU 分支 ====================
       # 根据用户选择的变体和分支，确定实际使用的 Git 分支
       - name: 确定 KernelSU 分支
+        if: steps.check_sub.outputs.skip != 'true'
         id: ksu-branch
         run: |
           branch_input="${{ inputs.ksu_branch }}"
@@ -456,6 +494,7 @@ jobs:
       # ==================== 添加 KernelSU ====================
       # 根据选择的变体添加对应的 KernelSU
       - name: 添加 KernelSU
+        if: steps.check_sub.outputs.skip != 'true'
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           case "${{ inputs.ksu_variant }}" in
@@ -519,7 +558,7 @@ jobs:
 
       # ==================== 定制 SukiSU 版本标识 ====================
       - name: 配置 SukiSU 管理器信息
-        if: inputs.ksu_variant == 'SukiSU'
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.ksu_variant == 'SukiSU') }}
         working-directory: ${{ env.KERNEL_ROOT }}/KernelSU
         run: |
           KBUILD_FILE="./kernel/Kbuild"
@@ -574,7 +613,7 @@ jobs:
       # ==================== 应用 SUSFS 补丁 ====================
       # SUSFS (Super User SUS FileSystem) 用于隐藏 root 痕迹
       - name: 应用 SUSFS 补丁
-        if: inputs.enable_susfs
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.enable_susfs) }}
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           echo "应用 SUSFS 补丁..."
@@ -711,7 +750,7 @@ jobs:
       # ==================== Unicode 绕过修复 ====================
       # 修复 Unicode 零宽字符绕过检测的问题
       - name: 应用 Unicode 绕过修复
-        if: inputs.enable_susfs
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.enable_susfs) }}
         working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
           if [ "${{ inputs.kernel_version }}" = "5.10" ] || [ "${{ inputs.kernel_version }}" = "5.15" ]; then
@@ -723,7 +762,7 @@ jobs:
       # ==================== 升级 LZ4 并应用 LZ4KD/LZ4K_OPLUS 补丁 ====================
       # 统一处理 ZRAM 相关的 LZ4 变更，减少重复 step
       - name: 配置 ZRAM LZ4 补丁栈
-        if: inputs.use_zram
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.use_zram) }}
         working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
           # 第一阶段：升级 LZ4 到 1.10.0
@@ -754,7 +793,7 @@ jobs:
       # ==================== 修复 6.6 WiFi/蓝牙兼容性（三星 + 小米） ====================
       # 合并三星与小米修复，并采用幂等写法避免重复追加导致脏变更
       - name: 修复 6.6 WiFi/蓝牙兼容性（三星 + 小米）
-        if: inputs.kernel_version == '6.6'
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.kernel_version == '6.6') }}
         working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
           # 仅在行不存在时追加，避免重复执行污染文件
@@ -807,7 +846,7 @@ jobs:
       # ==================== 配置 ZRAM 选项 ====================
       # 启用各种 ZRAM 压缩算法
       - name: 配置 ZRAM 选项
-        if: inputs.use_zram
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.use_zram) }}
         run: |
           CONFIG_FILE="$DEFCONFIG"
 
@@ -853,7 +892,7 @@ jobs:
       # ==================== 添加 BBG 防格机补丁 ====================
       # BBG (Baseband Guard) 防止基带格式化攻击
       - name: 添加 BBG 防格机补丁
-        if: inputs.use_bbg
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.use_bbg) }}
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
@@ -863,6 +902,7 @@ jobs:
       # ==================== 配置内核选项 ====================
       # 添加 KernelSU 和其他必要的内核配置
       - name: 配置内核选项
+        if: steps.check_sub.outputs.skip != 'true'
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           cat >> "$DEFCONFIG" << 'EOF'
@@ -881,7 +921,7 @@ jobs:
       # ==================== 添加 SUSFS 配置 ====================
       # 启用 SUSFS 各项隐藏功能
       - name: 添加 SUSFS 配置
-        if: inputs.enable_susfs
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.enable_susfs) }}
         run: |
           cat >> "$DEFCONFIG" << 'EOF'
           CONFIG_KSU_SUSFS=y
@@ -898,6 +938,7 @@ jobs:
 
       # ==================== 配置内核名称 ====================
       - name: 配置内核名称
+        if: steps.check_sub.outputs.skip != 'true'
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           if [ -f "build/build.sh" ]; then
@@ -926,6 +967,7 @@ jobs:
 
       # ==================== 自定义构建时间 ====================
       - name: 设置自定义构建时间
+        if: steps.check_sub.outputs.skip != 'true'
         shell: bash
         run: |
           # 读取输入：输入 N/n 或留空时，使用当前 UTC 时间
@@ -958,6 +1000,7 @@ jobs:
       # ==================== 编译内核 ====================
       # 使用重试机制编译内核，超时后自动重试
       - name: 构建——如出错为该KSU暂时未同步SUSFS代码或编译时错误(等待该KSU仓库修复)
+        if: steps.check_sub.outputs.skip != 'true'
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 30
@@ -997,7 +1040,7 @@ jobs:
       # ==================== KPM 补丁 (仅 SukiSU) ====================
       # 为 SukiSU 应用 KPM (Kernel Patch Module) 补丁
       - name: 应用 KPM 补丁 (SukiSU/ReSukiSU/Next)
-        if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'Next')
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'Next')) }}
         run: |
           case "${{ inputs.android_version }}" in
             "android12"|"android13")
@@ -1020,6 +1063,7 @@ jobs:
       # ==================== 准备 Boot 镜像 ====================
       # 复制编译产物到工作目录
       - name: 准备 Boot 镜像
+        if: steps.check_sub.outputs.skip != 'true'
         run: |
           mkdir -p bootimgs
 
@@ -1037,6 +1081,7 @@ jobs:
 
       # ==================== 创建 AnyKernel3 压缩包 ====================
       - name: 创建 AnyKernel3 压缩包
+        if: steps.check_sub.outputs.skip != 'true'
         run: |
           cd $ANYKERNEL3
           ZIP_NAME="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-AnyKernel3.zip"
@@ -1046,7 +1091,7 @@ jobs:
       # ==================== 构建 Boot 镜像 (Android 12) ====================
       # Android 12 需要从 GKI 认证镜像中提取 ramdisk
       - name: 构建 Boot 镜像 (Android 12)
-        if: inputs.android_version == 'android12'
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.android_version == 'android12') }}
         working-directory: bootimgs
         run: |
           GKI_URL=https://dl.google.com/android/gki/gki-certified-boot-android12-5.10-${{ inputs.os_patch_level }}_${{ inputs.revision }}.zip
@@ -1082,7 +1127,7 @@ jobs:
       # ==================== 构建 Boot 镜像 (Android 13+) ====================
       # Android 13 及以上版本不需要 ramdisk
       - name: 构建 Boot 镜像 (Android 13+)
-        if: inputs.android_version == 'android13' || inputs.android_version == 'android14' || inputs.android_version == 'android15'
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (inputs.android_version == 'android13' || inputs.android_version == 'android14' || inputs.android_version == 'android15') }}
         working-directory: bootimgs
         run: |
           gzip -n -k -f -9 ./Image > ./Image.gz
@@ -1105,7 +1150,7 @@ jobs:
       # ==================== 收集补丁冲突文件 ====================
       # 收集所有 .rej 文件用于调试补丁失败问题
       - name: 收集补丁冲突文件
-        if: always()
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (always()) }}
         run: |
           REJECTS_DIR="$GITHUB_WORKSPACE/patch-rejects"
           mkdir -p "$REJECTS_DIR"
@@ -1132,6 +1177,7 @@ jobs:
 
       # ==================== 上传构建产物 ====================
       - name: 上传构建产物
+        if: steps.check_sub.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.ksu_variant }}_kernel-${{ env.CONFIG }}
@@ -1142,7 +1188,7 @@ jobs:
 
       # ==================== 上传补丁冲突文件 ====================
       - name: 上传补丁冲突文件
-        if: always() && env.REJ_COUNT > 0
+        if: ${{ steps.check_sub.outputs.skip != 'true' && (always() && env.REJ_COUNT > 0) }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.ksu_variant }}_kernel-${{ env.CONFIG }}-Rejects
