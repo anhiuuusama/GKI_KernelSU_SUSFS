@@ -101,6 +101,11 @@ on:
         description: "构建全部版本"
         type: boolean
         default: true
+      sub_levels:
+        description: "指定 sub_level 列表 (逗号分隔, 留空=全部)"
+        type: string
+        default: ""
+        required: false
 
 jobs:
   # ==================== 获取管理器 ====================
@@ -126,6 +131,7 @@ jobs:
       use_kpm: ${{ inputs.use_kpm }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
       called_from_main: true
+      sub_levels: ${{ inputs.sub_levels }}
 
   # ==================== Android 13 - 5.15 构建 ====================
   build-a13-5-15:
@@ -142,6 +148,7 @@ jobs:
       use_kpm: ${{ inputs.use_kpm }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
       called_from_main: true
+      sub_levels: ${{ inputs.sub_levels }}
 
   # ==================== Android 14 - 6.1 构建 ====================
   build-a14-6-1:
@@ -158,6 +165,7 @@ jobs:
       use_kpm: ${{ inputs.use_kpm }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
       called_from_main: true
+      sub_levels: ${{ inputs.sub_levels }}
 
   # ==================== Android 15 - 6.6 构建 ====================
   build-a15-6-6:
@@ -174,6 +182,7 @@ jobs:
       use_kpm: ${{ inputs.use_kpm }}
       cancel_susfs: ${{ inputs.cancel_susfs }}
       called_from_main: true
+      sub_levels: ${{ inputs.sub_levels }}
 
   # ==================== 收集补丁冲突文件 ====================
   # 汇总所有构建任务中的 .rej 文件，方便调试补丁问题
