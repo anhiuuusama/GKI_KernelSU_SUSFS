@@ -102,7 +102,6 @@ on:
 jobs:
   build-kernels-a14-6-1:
     name: "6.1.${{ matrix.sub_level }}-${{ matrix.os_patch_level }}"
-    if: ${{ inputs.sub_levels == '' || contains(format(',{0},', inputs.sub_levels), format(',{0},', matrix.sub_level)) }}
     strategy:
       fail-fast: false
       matrix:
@@ -167,6 +166,7 @@ jobs:
       use_kpm: ${{ inputs.use_kpm }}
       supp_op: false
       enable_susfs: ${{ !inputs.cancel_susfs }}
+      sub_levels: ${{ inputs.sub_levels }}
 
   # 仅在直接触发时运行，从 main.yml 调用时跳过
   get-ksu-manager:
