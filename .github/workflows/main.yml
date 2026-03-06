@@ -11,10 +11,6 @@
 name: 构建内核
 
 # 并发控制：同一分支只运行一个实例，新运行会取消旧的
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
-
 permissions:
   contents: write
   actions: write
