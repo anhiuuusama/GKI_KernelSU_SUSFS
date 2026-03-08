@@ -759,6 +759,23 @@ jobs:
             patch -p1 --forward < "$ACTION_BUILD/patches/unicode_bypass_fix_6.1+.patch" || true
           fi
 
+      # ==================== 修复 stack_chk_guard ====================
+      - name: 修复 duplicate symbol stack_chk_guard
+        if: steps.check_sub.outputs.skip != 'true'
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          echo "Removing duplicate __stack_chk_guard from KernelSU..."
+          if [ -f "KernelSU/kernel/ksu.c" ]; then
+            sed -i 's/unsigned long __stack_chk_guard;/\/\/ unsigned long __stack_chk_guard;/g' KernelSU/kernel/ksu.c
+          fi
+          if [ -f "common/drivers/kernelsu/ksu.c" ]; then
+            sed -i 's/unsigned long __stack_chk_guard;/\/\/ unsigned long __stack_chk_guard;/g' common/drivers/kernelsu/ksu.c
+          fi
+          if [ -f "common/drivers/kernelsu/kernel/ksu.c" ]; then
+            sed -i 's/unsigned long __stack_chk_guard;/\/\/ unsigned long __stack_chk_guard;/g' common/drivers/kernelsu/kernel/ksu.c
+          fi
+
+
       # ==================== 升级 LZ4 并应用 LZ4KD/LZ4K_OPLUS 补丁 ====================
       # 统一处理 ZRAM 相关的 LZ4 变更，减少重复 step
       - name: 配置 ZRAM LZ4 补丁栈
